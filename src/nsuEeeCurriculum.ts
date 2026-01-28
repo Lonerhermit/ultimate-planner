@@ -1,0 +1,16 @@
+export const nsuEeeCurriculum = [
+  { name: 'EEE 111 Analog Electronics-I' },
+  { name: 'EEE 141 Electrical Circuits I' },
+  { name: 'EEE 211 Digital Logic Design' },
+  { name: 'EEE 221 Signals and Systems' },
+  { name: 'EEE 241 Electrical Circuits II' },
+  { name: 'EEE 311 Analog Electronics II' },
+  { name: 'EEE 312 Power Electronics' },
+  { name: 'EEE 321 Introduction to Communications Systems' },
+  { name: 'EEE 342 Control Engineering' },
+  { name: 'EEE 361 Electromagnetic Fields & Waves' },
+  { name: 'EEE 362 Power Systems' },
+  { name: 'EEE 363 Electrical Machines' },
+  { name: 'MAT 350 Engineering Mathematics' },
+  { name: 'MAT 361 Probability and Statistics' },
+];

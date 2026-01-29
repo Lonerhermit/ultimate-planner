@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import { toPng } from 'html-to-image';
 import { allCourses, DepartmentRegistry } from './data';
 import './index.css';
 
@@ -23,67 +24,161 @@ export default function App() {
   const [selectedDept, setSelectedDept] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCourses, setSelectedCourses] = useState<any[]>([]);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  const downloadRoutine = () => {
+    if (gridRef.current === null) return;
+    toPng(gridRef.current, { cacheBust: true, backgroundColor: '#0f172a' })
+      .then((dataUrl) => {
+        const link = document.createElement('a');
+        link.download = `${university}-routine.png`;
+        link.href = dataUrl;
+        link.click();
+      })
+      .catch((err) => console.error('Download failed', err));
+  };
 
   const filteredCourses = useMemo(() => {
     let list = (allCourses || []).filter((c) => c.uni === university);
 
     if (selectedDept !== 'All') {
-      const registryKey = `${university}_${selectedDept.toUpperCase()}`;
-      const curriculum = DepartmentRegistry?.[registryKey] || [];
-
       list = list.filter((course) => {
         const name = course.name.toUpperCase();
         const dept = selectedDept.toUpperCase();
 
-        // Standard check
-        if (name.startsWith(dept)) return true;
+        if (university === 'AIUB') {
+          if (dept === 'CSE') {
+            return (
+              name.startsWith('CSC') ||
+              name.startsWith('COE') ||
+              name.startsWith('BSE') ||
+              name.startsWith('BDS') ||
+              name.startsWith('MAT') ||
+              name.startsWith('PHY') ||
+              name.startsWith('ENG') ||
+              name.startsWith('CHEM') ||
+              name.startsWith('BAS')
+            );
+          }
+          if (dept === 'EEE') {
+            return (
+              name.startsWith('EEE') ||
+              name.startsWith('COE') ||
+              name.startsWith('MAT') ||
+              name.startsWith('PHY') ||
+              name.startsWith('BAE')
+            );
+          }
+          if (dept === 'BBA') {
+            return (
+              name.startsWith('BBA') ||
+              name.startsWith('MGT') ||
+              name.startsWith('MKT') ||
+              name.startsWith('FIN') ||
+              name.startsWith('ECO') ||
+              name.startsWith('MIS') ||
+              name.startsWith('HRM')
+            );
+          }
+          if (dept === 'PHARMACY') {
+            return (
+              name.startsWith('PHA') ||
+              name.startsWith('PHR') ||
+              name.startsWith('BIO')
+            );
+          }
+        }
 
-        // NSU Specific mapping for BBA and Pharmacy
         if (university === 'NSU') {
-          if (dept === 'PHARMACY' && name.startsWith('PHRM')) return true;
-          if (
-            dept === 'BBA' &&
-            (name.startsWith('BUS') ||
+          if (dept === 'CSE')
+            return (
+              name.startsWith('CSE') ||
+              name.startsWith('MAT') ||
+              name.startsWith('PHY')
+            );
+          if (dept === 'PHARMACY')
+            return (
+              name.startsWith('PHR') ||
+              name.startsWith('BIO') ||
+              name.startsWith('CHE')
+            );
+          if (dept === 'BBA') {
+            return (
+              name.startsWith('BUS') ||
               name.startsWith('ACT') ||
               name.startsWith('MKT') ||
               name.startsWith('MGT') ||
               name.startsWith('FIN') ||
-              name.startsWith('ECO'))
-          )
-            return true;
+              name.startsWith('ECO')
+            );
+          }
         }
-
-        // Registry check
-        return curriculum.some((curr) =>
-          name.includes(curr.name.toUpperCase())
-        );
+        return name.startsWith(dept);
       });
     }
 
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toUpperCase();
-      list = list.filter(
-        (c) => c.name.toUpperCase().includes(q) || c.id.toString().includes(q)
+      const searchSource = (allCourses || []).filter(
+        (c) => c.uni === university
+      );
+      list = searchSource.filter(
+        (c) =>
+          c.name.toUpperCase().includes(q) ||
+          c.id.toString().includes(q) ||
+          c.sec.toUpperCase().includes(q)
       );
     }
+
     return list;
   }, [university, selectedDept, searchQuery]);
 
   const getBaseName = (name: string) =>
     name.split('[')[0].split(':')[0].trim().toUpperCase();
 
+  // --- NEW: CONFLICT DETECTION LOGIC ---
+  const checkConflict = (newCourse: any) => {
+    for (const selected of selectedCourses) {
+      for (const newSession of newCourse.schedule) {
+        for (const existingSession of selected.schedule) {
+          if (newSession.day === existingSession.day) {
+            // Check if times overlap
+            // (StartA < EndB) && (EndA > StartB)
+            if (
+              newSession.start < existingSession.end &&
+              newSession.end > existingSession.start
+            ) {
+              return { hasConflict: true, conflictWith: selected.name };
+            }
+          }
+        }
+      }
+    }
+    return { hasConflict: false, conflictWith: null };
+  };
+
   const addCourse = (course: any) => {
+    // 1. Check if course already added
     const isAlreadySelected = selectedCourses.some(
       (c) => getBaseName(c.name) === getBaseName(course.name)
     );
     if (isAlreadySelected) return;
+
+    // 2. Check for Time Conflict
+    const conflict = checkConflict(course);
+    if (conflict.hasConflict) {
+      alert(
+        `⚠️ TIME CONFLICT!\n\nThis section overlaps with your already selected course: "${conflict.conflictWith}".\n\nPlease choose a different section.`
+      );
+      return;
+    }
+
     const color = `hsla(${Math.random() * 360}, 65%, 40%, 1)`;
     setSelectedCourses([...selectedCourses, { ...course, color }]);
   };
 
-  const removeCourse = (id: string) => {
+  const removeCourse = (id: string) =>
     setSelectedCourses(selectedCourses.filter((c) => c.id !== id));
-  };
 
   return (
     <div className="ultimate-planner">
@@ -95,19 +190,24 @@ export default function App() {
           <div className="uni-toggle">
             <button
               className={university === 'AIUB' ? 'active' : ''}
-              onClick={() => setUniversity('AIUB')}
+              onClick={() => {
+                setUniversity('AIUB');
+                setSelectedDept('All');
+              }}
             >
               AIUB
             </button>
             <button
               className={university === 'NSU' ? 'active' : ''}
-              onClick={() => setUniversity('NSU')}
+              onClick={() => {
+                setUniversity('NSU');
+                setSelectedDept('All');
+              }}
             >
               NSU
             </button>
           </div>
         </div>
-
         <div className="controls">
           <label>Department</label>
           <select
@@ -115,54 +215,76 @@ export default function App() {
             onChange={(e) => setSelectedDept(e.target.value)}
           >
             <option value="All">All Courses</option>
-            <option value="CSE">CSE</option>
-            <option value="EEE">EEE</option>
-            <option value="BBA">BBA</option>
-            <option value="PHARMACY">PHARMACY</option>
+            <option value="CSE">Computer Science</option>
+            <option value="EEE">EEE / Engineering</option>
+            <option value="BBA">BBA / Business</option>
+            <option value="PHARMACY">Pharmacy</option>
           </select>
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search (e.g. CSC1102 or Calculus)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-
         <div className="course-list">
-          {filteredCourses.slice(0, 50).map((course) => {
-            const isSelected = selectedCourses.some(
-              (c) => getBaseName(c.name) === getBaseName(course.name)
-            );
-            return (
-              <div
-                key={course.id}
-                className={`course-card ${isSelected ? 'disabled' : ''}`}
-                onClick={() => !isSelected && addCourse(course)}
-              >
-                <div className="info">
-                  <strong>{course.name}</strong>
-                  <span>
-                    Sec: {course.sec} | ID: {course.id}
-                  </span>
+          {filteredCourses.length === 0 ? (
+            <p
+              style={{ padding: '20px', color: '#94a3b8', fontSize: '0.8rem' }}
+            >
+              No courses found. Try searching by code (e.g., CSC, PHY, BBA).
+            </p>
+          ) : (
+            filteredCourses.slice(0, 50).map((course) => {
+              const isSelected = selectedCourses.some(
+                (c) => getBaseName(c.name) === getBaseName(course.name)
+              );
+              return (
+                <div
+                  key={course.id}
+                  className={`course-card ${isSelected ? 'disabled' : ''}`}
+                  onClick={() => !isSelected && addCourse(course)}
+                >
+                  <div className="info">
+                    <strong>{course.name}</strong>
+                    <span>
+                      Sec: {course.sec} | ID: {course.id}
+                    </span>
+                  </div>
+                  <button className="add-btn" disabled={isSelected}>
+                    {isSelected ? '✓' : '+'}
+                  </button>
                 </div>
-                <button className="add-btn" disabled={isSelected}>
-                  {isSelected ? '✓' : '+'}
-                </button>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </aside>
 
       <main className="routine-container">
         <div className="routine-header">
           <h2>{university} Routine</h2>
-          <button className="clear-btn" onClick={() => setSelectedCourses([])}>
-            Reset
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="clear-btn"
+              style={{
+                background: 'var(--accent)',
+                color: '#000',
+                fontWeight: 'bold',
+              }}
+              onClick={downloadRoutine}
+            >
+              Download PNG
+            </button>
+            <button
+              className="clear-btn"
+              onClick={() => setSelectedCourses([])}
+            >
+              Reset
+            </button>
+          </div>
         </div>
-
-        <div className="grid-wrapper">
+        <div className="grid-wrapper" ref={gridRef}>
           <div className="routine-grid">
             <div className="time-col">
               <div className="grid-cell header">Time</div>
@@ -182,7 +304,6 @@ export default function App() {
                   if (time.includes('AM') && h === 12) h = 0;
                   const slotStart = h * 60 + parseInt(mStr);
                   const slotEnd = slotStart + 60;
-
                   const sessions = selectedCourses
                     .flatMap((c) =>
                       (c.schedule || []).map((s: any) => ({ ...s, parent: c }))
@@ -193,7 +314,6 @@ export default function App() {
                         s.day === day && sStart >= slotStart && sStart < slotEnd
                       );
                     });
-
                   return (
                     <div key={day + time} className="grid-cell">
                       {sessions.map((session, idx) => (

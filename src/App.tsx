@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { toPng } from 'html-to-image';
 import { allCourses, DepartmentRegistry } from './data';
 import './index.css';
 
@@ -26,16 +25,27 @@ export default function App() {
   const [selectedCourses, setSelectedCourses] = useState<any[]>([]);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const downloadRoutine = () => {
+  // OPTION 2: CDN-based Download (Fixes Vercel Build Error)
+  const downloadRoutine = async () => {
     if (gridRef.current === null) return;
-    toPng(gridRef.current, { cacheBust: true, backgroundColor: '#0f172a' })
-      .then((dataUrl) => {
-        const link = document.createElement('a');
-        link.download = `${university}-routine.png`;
-        link.href = dataUrl;
-        link.click();
-      })
-      .catch((err) => console.error('Download failed', err));
+
+    try {
+      // Dynamically importing from CDN to bypass local build issues
+      const htmlToImage = await import('https://cdn.skypack.dev/html-to-image');
+
+      const dataUrl = await htmlToImage.toPng(gridRef.current, {
+        cacheBust: true,
+        backgroundColor: '#0f172a',
+      });
+
+      const link = document.createElement('a');
+      link.download = `${university}-routine.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Download failed', err);
+      alert('Download failed. Please try again or take a screenshot.');
+    }
   };
 
   const filteredCourses = useMemo(() => {
@@ -98,9 +108,9 @@ export default function App() {
             );
           if (dept === 'PHARMACY')
             return (
+              name.startsWith('PHRM') ||
               name.startsWith('PHR') ||
-              name.startsWith('BIO') ||
-              name.startsWith('CHE')
+              name.startsWith('BIO')
             );
           if (dept === 'BBA') {
             return (
@@ -136,14 +146,12 @@ export default function App() {
   const getBaseName = (name: string) =>
     name.split('[')[0].split(':')[0].trim().toUpperCase();
 
-  // --- NEW: CONFLICT DETECTION LOGIC ---
+  // Time Conflict Detection
   const checkConflict = (newCourse: any) => {
     for (const selected of selectedCourses) {
       for (const newSession of newCourse.schedule) {
         for (const existingSession of selected.schedule) {
           if (newSession.day === existingSession.day) {
-            // Check if times overlap
-            // (StartA < EndB) && (EndA > StartB)
             if (
               newSession.start < existingSession.end &&
               newSession.end > existingSession.start
@@ -158,17 +166,15 @@ export default function App() {
   };
 
   const addCourse = (course: any) => {
-    // 1. Check if course already added
     const isAlreadySelected = selectedCourses.some(
       (c) => getBaseName(c.name) === getBaseName(course.name)
     );
     if (isAlreadySelected) return;
 
-    // 2. Check for Time Conflict
     const conflict = checkConflict(course);
     if (conflict.hasConflict) {
       alert(
-        `⚠️ TIME CONFLICT!\n\nThis section overlaps with your already selected course: "${conflict.conflictWith}".\n\nPlease choose a different section.`
+        `⚠️ TIME CONFLICT!\n\nThis section overlaps with: "${conflict.conflictWith}".`
       );
       return;
     }
@@ -222,42 +228,34 @@ export default function App() {
           </select>
           <input
             type="text"
-            placeholder="Search (e.g. CSC1102 or Calculus)..."
+            placeholder="Search ID or Name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
         <div className="course-list">
-          {filteredCourses.length === 0 ? (
-            <p
-              style={{ padding: '20px', color: '#94a3b8', fontSize: '0.8rem' }}
-            >
-              No courses found. Try searching by code (e.g., CSC, PHY, BBA).
-            </p>
-          ) : (
-            filteredCourses.slice(0, 50).map((course) => {
-              const isSelected = selectedCourses.some(
-                (c) => getBaseName(c.name) === getBaseName(course.name)
-              );
-              return (
-                <div
-                  key={course.id}
-                  className={`course-card ${isSelected ? 'disabled' : ''}`}
-                  onClick={() => !isSelected && addCourse(course)}
-                >
-                  <div className="info">
-                    <strong>{course.name}</strong>
-                    <span>
-                      Sec: {course.sec} | ID: {course.id}
-                    </span>
-                  </div>
-                  <button className="add-btn" disabled={isSelected}>
-                    {isSelected ? '✓' : '+'}
-                  </button>
+          {filteredCourses.slice(0, 50).map((course) => {
+            const isSelected = selectedCourses.some(
+              (c) => getBaseName(c.name) === getBaseName(course.name)
+            );
+            return (
+              <div
+                key={course.id}
+                className={`course-card ${isSelected ? 'disabled' : ''}`}
+                onClick={() => !isSelected && addCourse(course)}
+              >
+                <div className="info">
+                  <strong>{course.name}</strong>
+                  <span>
+                    Sec: {course.sec} | ID: {course.id}
+                  </span>
                 </div>
-              );
-            })
-          )}
+                <button className="add-btn" disabled={isSelected}>
+                  {isSelected ? '✓' : '+'}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </aside>
 
